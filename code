@@ -1,0 +1,49 @@
+from transformers import ViTImageProcessor, ViTForImageClassification
+from PIL import Image
+import requests
+import re
+import pandas as pd
+
+def predict_image_class(url):
+    try:
+        image = Image.open(requests.get(url, stream=True).raw)
+    except Exception as e:
+        print(f"Error opening image directly from URL: {e}")
+        match = re.search(r"imgurl=(.*?)&", url)
+        if match:
+            actual_image_url = match.group(1)
+            actual_image_url = actual_image_url.replace("%3A", ":").replace("%2F", "/")
+            print("Trying to open image using extracted url:", actual_image_url)
+            try:
+                image = Image.open(requests.get(actual_image_url, stream=True).raw)
+            except Exception as e:
+                print(f"Error opening image from extracted URL: {e}")
+                return "Error loading image", None  # Return error message
+        else:
+            return "Error loading image", None
+
+    processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224')
+    model = ViTForImageClassification.from_pretrained('google/vit-base-patch16-224')
+    inputs = processor(images=image, return_tensors="pt")
+    outputs = model(**inputs)
+    logits = outputs.logits
+    predicted_class_idx = logits.argmax(-1).item()
+    predicted_class = model.config.id2label[predicted_class_idx]
+    return predicted_class, url
+
+
+# Example usage with multiple URLs
+urls = [
+
+    'https://www.google.com/imgres?q=persian%20cat&imgurl=https%3A%2F%2Fwww.cuteness.com%2Fcuteness%2Fidentify-persian-cat%2F9d63ea7f7bd0464b8ebcf42a5d6b8a45&imgrefurl=https%3A%2F%2Fwww.cuteness.com%2Farticle%2Fidentify-persian-cat%2F&docid=uDmWhSYNUe1YXM&tbnid=8JdGYFfmYRKBAM&vet=12ahUKEwjN6-WPgd-KAxVkU_UHHZGHJvkQM3oECBYQAA..i&w=780&h=520&hcb=2&ved=2ahUKEwjN6-WPgd-KAxVkU_UHHZGHJvkQM3oECBYQAA',
+    # Add more URLs here...
+]
+
+
+results = []
+for url in urls:
+    predicted_class, image_url = predict_image_class(url)
+    results.append([image_url, predicted_class])
+
+df = pd.DataFrame(results, columns=['Image URL', 'Predicted Class'])
+df
